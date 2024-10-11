@@ -6,12 +6,12 @@
 3. Kurangnya kesadaran pengguna
 4. Peningkatan sistem keamanan penyimpanan dana
 
-## Datasets
+## Dataset
 Digital Wallet Transaction [Kaggle](https://www.kaggle.com/datasets/harunrai/digital-wallet-transactions)
 
 Description: This dataset simulates transactions from a digital wallet platform similar to popular services like PayTm in India or Khalti in Nepal. It contains 5000 synthetic records of various financial transactions across multiple categories, providing a rich source for analysis of digital payment behaviors and trends.
 
-## Metode
+## Method
 - Data Preprocessing: Label Encoder, One-hot Encoder, dan Normalization
 - Model Development: Outlier detection using One Class SVM 
 - Evaluate: Anomaly pattern and Silhouette
