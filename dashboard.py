@@ -1,362 +1,205 @@
-# Plotly's Figure Friday challenge. See more info here: https://community.plotly.com/t/figure-friday-2024-week-32/86401
 import dash
 import pandas as pd
-from dash import Dash, html, dcc, Input, Output, State, callback, Patch
+from dash import Dash, html, dcc, Input, Output, callback
 import dash_bootstrap_components as dbc
 import dash_ag_grid as dag
-import plotly.graph_objects as go
+import shap
+import datetime
+import matplotlib.pyplot as plt
+import plotly.graph_objs as go  # Importing Plotly for charts
+from main import *  # Assuming your main file contains the required functions
 
+# Setup the Dash app
 app = Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
+df = pd.DataFrame()  # Initialize an empty DataFrame
 
-df = pd.read_csv('https://raw.githubusercontent.com/plotly/Figure-Friday/main/2024/week-32/irish-pay-gap.csv')
-df['Report Link'] = df['Report Link'].apply(lambda x: f'[Report]({x})')
-df['Company'] = df.apply(lambda row: f'[{row["Company Name"]}]({row["Company Site"]})', axis=1)
-df.rename(columns={'Q1 Men': 'Q1 Male'}, inplace=True)
+# Replace with your actual CSV path
+categorical_cols = ['product_category', 'payment_method', 'transaction_status', 'device_type', 'location']
+numerical_cols = ['product_amount','transaction_fee','cashback','loyalty_points']
+preprocessing = PreProcessing()
+model_development = ModelDevelopment()
 
-numeric_columns = [
-   'Mean Hourly Gap', 'Median Hourly Gap', 'Mean Bonus Gap', 'Median Bonus Gap', 'Mean Hourly Gap Part Time',
-   'Median Hourly Gap Part Time', 'Mean Hourly Gap Part Temp', 'Median Hourly Gap Part Temp', 'Percentage Bonus Paid Female',
-   'Percentage Bonus Paid Male', 'Percentage BIK Paid Female', 'Percentage BIK Paid Male', 'Q1 Female', 'Q1 Male', 'Q2 Female',
-   'Q2 Male', 'Q3 Female', 'Q3 Male', 'Q4 Female', 'Q4 Male', 'Percentage Employees Female', 'Percentage Employees Male'
-]
+# Read data
+data_path = "./data/data.csv"
+data = pd.read_csv(filepath_or_buffer=data_path)
 
-company_dropdown = html.Div(
+preprocessing_data = preprocessing.extract_date_time(data=data)
+preprocessing.label_encoder(data=data[categorical_cols])
+encoded_data = preprocessing.transform_encoder(data=data[categorical_cols])
+preprocessing_data = pd.concat([preprocessing_data, encoded_data, data[numerical_cols]], axis=1)
+preprocessing.normalize(data=preprocessing_data)
+preprocessing_data = preprocessing.transform_normalize(data=preprocessing_data)
+
+model_development.set_model(data=preprocessing_data)
+preprocessing_data["fraud_score"] = model_development.inference_model(data=preprocessing_data)
+threshold = model_development.contamination*max(preprocessing_data["fraud_score"])
+explaiable = SHAPValue(data=preprocessing_data[preprocessing_data.columns[:-1]])  
+explaiable.set_explainer(model=model_development.model.predict)
+
+# Dropdown for selecting user
+user_dropdown = html.Div(
     [
-        dbc.Label("Select a Company", html_for="company_dropdown"),
+        dbc.Label("Select a user", html_for="user_dropdown"),
         dcc.Dropdown(
-            id="company-dropdown",
-            options=sorted(df["Company Name"].unique()),
-            value='Ryanair',
+            id="user-dropdown",
+            options=[{'label': user, 'value': user} for user in ['USER_00001', 'USER_00002', 'USER_00003', 'USER_00004', 'USER_00005']],
+            value='USER_00001',
             clearable=False,
             maxHeight=600,
             optionHeight=50
         ),
-    ],  className="mb-4",
+    ], className="mb-4",
 )
 
-year_radio = html.Div(
-    [
-        dbc.Label("Select Year", html_for="date-checklist"),
-        dbc.RadioItems(
-            options=[2023, 2022],
-            value=2023,
-            id="year-radio",
-        ),
-    ],
-    className="mb-4",
-)
-
+# Control panel layout
 control_panel = dbc.Card(
     dbc.CardBody(
-        [year_radio, company_dropdown ],
+        [user_dropdown],
         className="bg-light",
     ),
     className="mb-4"
 )
 
-heading = html.H1("Ireland Gender Pay Gap Analysis",className="bg-secondary text-white p-2 mb-4")
+# Heading and description
+heading = html.H1("E-wallet Transaction Fraud Detections", className="bg-secondary text-white p-2 mb-4")
 
+# Accordion with information about data and project
 about_card = dcc.Markdown(
     """
-    The gender pay gap does not measure equal pay, instead it measures the difference between men and
-    women's average and median hourly pay.  Equal pay, on the other hand, is the legal obligation under the Employment
-     Equality Acts that requires  employers to give men and women equal pay if they are employed to do equal work. 
-     
-    Note that there is no equivalent reporting requirement in the US. Refer to this [US Department of Labour brief](https://www.dol.gov/sites/dolgov/files/WB/equalpay/WB_issuebrief-undstg-wage-gap-v1.pdf)
-     which notes that "regardless of the gender composition of jobs, women tend to be paid less on average than men in the
-     same occupation even when working full time."
-    """)
+    This dashboard simulates fraud detection in e-wallet transactions.
+    """
+)
 
 data_card = dcc.Markdown(
     """
-    Starting from 2022, Gender Pay Gap Reporting is a regulatory requirement that mandates employers in Ireland with
-     more than 250 employees to publish information on their gender pay gap.
-     
-     [Data source](https://paygap.ie/)
-     
-     [Data source GitHub](https://github.com/zenbuffy/irishGenderPayGap/tree/main)
-     
-     This site was created for Plotly's Figure Friday challenge. For additional data visualizations of this dataset and
-      to join the conversation, visit the [Plotly Community Forum](https://community.plotly.com/t/figure-friday-2024-week-32/86401)
+    The dataset contains synthetic transactions data to simulate real-world scenarios.
     """
 )
 
 info = dbc.Accordion([
-    dbc.AccordionItem(about_card, title="About Gender Pay Gap", ),
+    dbc.AccordionItem(about_card, title="About Project"),
     dbc.AccordionItem(data_card, title="Data Source")
-],  start_collapsed=True)
-
-def make_grid():
-    grid = dag.AgGrid(
-        id="grid",
-        rowData=df.to_dict("records"),
-        columnDefs=[
-          {"field": "Company", "cellRenderer": "markdown", "linkTarget": "_blank",  "initialWidth":250, "pinned": "left" },
-          {"field": "Report Link", "cellRenderer": "markdown", "linkTarget": "_blank", "floatingFilter": False},
-          {"field": "Report Year" }] +
-        [{"field": c} for c in numeric_columns],
-        defaultColDef={"filter": True, "floatingFilter": True,  "wrapHeaderText": True, "autoHeaderHeight": True, "initialWidth": 125 },
-        dashGridOptions={},
-        filterModel={'Report Year': {'filterType': 'number', 'type': 'equals', 'filter': 2023}},
-        rowClassRules = {"bg-secondary text-dark bg-opacity-25": "params.node.rowPinned === 'top' | params.node.rowPinned === 'bottom'"},
-        style={"height": 600, "width": "100%"}
-    )
-    return grid
+], start_collapsed=True)
 
 
+
+# Callback to generate the transaction grid
+@callback(
+    Output("grid-container", "children"),
+    [Input("user-dropdown", "value"),
+     Input("interval-component", "n_intervals")],
+)
+def make_grid(user,interval):
+    if not df.empty:
+        filtered_df = df[df['user_id'] == user]
+        grid = dag.AgGrid(
+            id="grid",
+            rowData=filtered_df.to_dict("records"),
+            columnDefs=[
+                {"field": "transaction_date", "cellRenderer": "markdown", "initialWidth": 250, "pinned": "left"},
+            ] + [{"field": "payment_method"},{"field": "device_type"},
+                 {"field": "location"},{"field": "transaction_status"},
+                 {"field": "fraud_score"},{"field": "label"}],
+            defaultColDef={"filter": True, "floatingFilter": True,  "wrapHeaderText": True, "autoHeaderHeight": True, "initialWidth": 200 },
+            dashGridOptions={},
+            style={"height": 600, "width": "100%"}
+        )
+        return grid
+#[{"field": c} for c in numerical_cols]+
+
+# Layout for the dashboard
 app.layout = dbc.Container(
     [
         dcc.Store(id="store-selected", data={}),
         heading,
         dbc.Row([
             dbc.Col([control_panel, info], md=3),
-            dbc.Col(
-                [
-                    dcc.Markdown(id="title"),
-                    dbc.Row([dbc.Col(html.Div(id="paygap-card")), dbc.Col( html.Div(id="bonusgap-card"))]),
-                    html.Div(id="bar-chart-card", className="mt-4"),
-                ],  md=9
-            ),
+            dbc.Col([html.Div(id="shap-bar-chart"), html.Div(id="fraud-score-chart")], md=9)
         ]),
-        dbc.Row(dbc.Col( make_grid()), className="my-4")
-    ],
-    fluid=True,
-)
-
-
-@callback(
-    Output("grid", "dashGridOptions"),
-    Output("store-selected", "data"),
-    Input("company-dropdown", "value"),
-    Input("year-radio", "value"),
-)
-def pin_selected_report(company, yr):
-    dff = df[(df["Company Name"] == company) & (df['Report Year'] == yr)]
-    dff = dff.fillna('')
-    records = dff.to_dict("records")
-    return {"pinnedTopRowData": records}, records
-
-
-@callback(
-    Output("grid", "dashGridOptions", allow_duplicate=True),
-    Input("grid", "virtualRowData"),
-    prevent_initial_call=True
-)
-def row_pinning_bottom(data):
-    pinned_data = []
-    if data:
-        dff = pd.DataFrame(data) if data else df
-        medians = dff[numeric_columns].median().round(1).to_dict()
-        if medians:
-            pinned_data = [{"Company": "Median", **medians}]
-
-    grid_option_patch = Patch()
-    grid_option_patch["pinnedBottomRowData"] = pinned_data
-    return grid_option_patch
-
-
-@callback(
-    Output("grid", "filterModel"),
-    Input("year-radio", "value"),
-    State("grid", "filterModel"),
-)
-def update_filter_model(year, model):
-    if model:
-        model["Report Year"] = {"filterType": "number", "type": "equals", "filter": year}
-        return model
-    return dash.no_update
-
-@callback(
-    Output("bar-chart-card", "children"),
-    Input("store-selected", "data")
-)
-def make_bar_chart(data):
-    if data is None or data[0] == {}:
-        fig = {}
-    else:
-        data = data[0]
-
-        # Separate the data for male and female
-        quarters = ['Q1', 'Q2', 'Q3', 'Q4']
-        male_percentages = [data[f'{q} Male'] for q in quarters]
-        female_percentages = [data[f'{q} Female'] for q in quarters]
-
-        quarter_labels = {
-            'Q1': 'Lower (Q1)',
-            'Q2': 'Lower Middle (Q2)',
-            'Q3': 'Upper Middle (Q3)',
-            'Q4': 'Upper (Q4)'
-        }
-        custom_labels = [quarter_labels[q] for q in quarters]
-
-        fig = go.Figure()
-        fig.add_trace(go.Bar(
-            y=custom_labels,
-            x=male_percentages,
-            name='Male',
-            orientation='h',
-            marker=dict(color='#19A0AA'),
-            text=male_percentages,
-            textfont_size=14,
-            textposition='inside',  # Position the text inside the bars
-        ))
-
-        fig.add_trace(go.Bar(
-            y=custom_labels,
-            x=female_percentages,
-            name='Female',
-            orientation='h',
-            marker=dict(color='#F15F36'),
-            text=female_percentages,
-            textfont_size=14,
-            textposition='inside',
-        ))
-
-        fig.update_layout(
-            xaxis=dict(ticksuffix='%'),
-            yaxis=dict(title='Quartile', categoryorder='array', categoryarray=quarters),
-            barmode='stack',
-            template='plotly_white',
-            legend=dict(
-                orientation='h',  # Horizontal legend
-                yanchor='bottom',
-                y=-0.25,  # Position below the chart
-                xanchor='center',
-                x=0.5,  # Centered horizontally
-                traceorder='normal'
-            ),
-            margin = dict(l=10, r=10, t=10, b=10),
+        dbc.Row(dbc.Col(html.Div(id="grid-container")), className="my-4"),
+        dcc.Interval(
+        id='interval-component',
+        interval=10000,  # Update every 1000 milliseconds (1 second)
+        n_intervals=0  # Initial number of intervals
         )
-
-    return dbc.Card([
-        dbc.CardHeader(html.H2("Proportion of men and women in each pay quartile"), className="text-center"),
-        dcc.Graph(figure=fig, style={"height":250}, config={'displayModeBar': False})
-    ])
-
-
-@callback(
-    Output("title", "children"),
-    Input("store-selected", "data")
+    ], fluid=True
 )
-def make_title(data):
-    data=data[0]
-    title = f"""
-    ## {data["Report Year"]} Gender Pay Gap Report for [{data["Company Name"]}]({data["Company Site"]}) 
-    ** For more company-specific details see the report link in the table below **
-    """
-    return title
 
-
-@callback(
-    Output("paygap-card", "children"),
-    Input("store-selected", "data")
+# Callback to update the data and SHAP values for the selected user
+@app.callback(
+    Output("store-selected", "data"),
+    Input("interval-component", "n_intervals")
 )
-def make_pay_gap_card(data):
-    data=data[0]
-    data = {k: (f"{v}%" if v  else '') for k, v in data.items()}
-    paygap = dbc.Row([
-        dbc.Col([
-            html.Div("Hourly Pay Gap", className=" border-bottom border-3"),
-            html.Div("ALL"),
-            html.Div("Part Time"),
-            html.Div("Temporary")
-        ], style={"minWidth": 250}),
-        dbc.Col([
-            html.Div("Mean", className=" border-bottom border-3"),
-            html.Div( f"{data['Mean Hourly Gap']}"),
-            html.Div(f"{data['Mean Hourly Gap Part Time']}"),
-            html.Div(f"{data['Mean Hourly Gap Part Temp']}"),
-        ]),
-        dbc.Col([
-            html.Div("Median", className=" border-bottom border-3"),
-            html.Div(f"{data['Median Hourly Gap']}"),
-            html.Div(f"{data['Median Hourly Gap Part Time']}"),
-            html.Div(f"{data['Median Hourly Gap Part Temp']}"),
-        ])
-    ], style={"minWidth": 400})
+def update_store(user):
+    global df  # Use the global variable
+    try:
+        for row in get_stream_data(data=data):
+            stream_data = preprocessing.extract_date_time(data=row)
+            encoded_stream_data = preprocessing.transform_encoder(data=row[categorical_cols])
+            stream_data = pd.concat([stream_data, encoded_stream_data, row[numerical_cols]], axis=1)
+            stream_data_not_normalize = stream_data.copy()
 
-    mean = dbc.Alert(dcc.Markdown(
-        f"""
-        ** Mean Pay **  
-        ### {data['Mean Hourly Gap']}  
-        Higher for men
-        """,
-    ), color="dark")
+            now = datetime.datetime.now()
+            stream_data_not_normalize['transaction_date'] = now.strftime("%Y-%m-%d %H:%M:%S")
+            stream_data_not_normalize = pd.concat([row[['user_id','product_amount','payment_method','device_type','location','transaction_status']],stream_data_not_normalize], axis=1)
+            stream_data = preprocessing.transform_normalize(data=stream_data)
+            stream_data["fraud_score"] = model_development.inference_model(data=stream_data)
+            stream_data["label"] = stream_data["fraud_score"].apply(lambda x: 1 if x >= threshold else 0)
+            stream_data_not_normalize["fraud_score"] = stream_data["fraud_score"]
+            stream_data_not_normalize["label"] = stream_data["label"]
+            shap_value = explaiable.get_shap_value(data=stream_data[stream_data.columns[:-2]])
+            df = pd.concat([df,stream_data_not_normalize], ignore_index=True) # Update stream_data from your main function
+            print(df.to_dict())
+            if True:
+                break
 
-    median = dbc.Alert(dcc.Markdown(
-        f"""
-            ** Median Pay ** 
-            ### {data['Median Hourly Gap']}  
-            Higher for men
-            """,
-    ), color="dark")
+    except StopIteration:
+        return {"stream_data": [], "shap_value": []}  # Handle end of generator
 
-    card =  dbc.Card([
-        dbc.CardHeader(html.H2("Hourly Pay Gap"), className="text-center"),
-        dbc.CardBody([
-            dbc.Row([dbc.Col(mean), dbc.Col(median)], className="text-center"),
-            paygap
-        ])
-    ])
-    return card
+# Function to plot SHAP bar plot and save it as an image
+#def plot_shap_bar(shap_value):
+#    # Create SHAP bar plot and save to file
+#    shap.plots.bar(shap_value, show=False)
+#    plt.savefig('./assets/shap_bar_plot.png', bbox_inches='tight')  # Save the plot to a file
+#    plt.close()  # Close the plot to free up memory
 
+# Callback to create SHAP bar chart using shap.plots.bar
+#@app.callback(
+#    Output("shap-bar-chart", "children"),
+#    Input("store-selected", "data")
+#)
+#def make_shap_plot(data):
+#    shap_value = data.get("shap_value", [])
+#    if not shap_value:  # Check if shap_value is available
+#        return dbc.Card([dcc.Markdown("No SHAP values available.")])
+#    
+#    # Generate SHAP bar plot and save as an image
+#    plot_shap_bar(shap_value)
+#
+#    return dbc.Card([
+#        dbc.CardHeader(html.H2("SHAP Values for Fraud Analysis")),
+#        html.Img(src='/assets/shap_bar_plot.png', style={'width': '100%'})  # Load image in the dashboard
+#    ])
 
-@callback(
-    Output("bonusgap-card", "children"),
-    Input("store-selected", "data")
-)
-def make_bonus_gap_card(data):
-    data=data[0]
-    if data['Mean Bonus Gap'] == '':
-        return ""
-    data = {k: (f"{v}%" if v  else '') for k, v in data.items()}
-    bonusgap = dbc.Row([
-        html.Div("Proportion of employees by gender to receive a bonus:", className="mb-1"),
-        dbc.Col([
-            html.Div("Bonus and BIK Pay Gap", className=" border-bottom border-3"),
-            html.Div("Bonus"),
-            html.Div("Benefits In Kind"),
-
-        ], style={"minWidth": 250}),
-        dbc.Col([
-            html.Div("Men", className=" border-bottom border-3"),
-            html.Div( f"{data['Percentage Bonus Paid Male']}"),
-            html.Div(f"{data['Percentage BIK Paid Male']}"),
-
-        ]),
-        dbc.Col([
-            html.Div("Women", className=" border-bottom border-3"),
-            html.Div(f"{data['Percentage Bonus Paid Female']}"),
-            html.Div(f"{data['Percentage BIK Paid Female']}"),
-
-        ])
-    ], style={"minWidth": 400})
-
-    mean = dbc.Alert(dcc.Markdown(
-        f"""
-        ** Mean Bonus Pay **  
-        ### {data['Mean Bonus Gap']}  
-        Higher for men
-        """,
-    ), color="dark")
-
-    median = dbc.Alert(dcc.Markdown(
-        f"""
-            ** Median Bonus Pay ** 
-            ### {data['Median Bonus Gap']}  
-            Higher for men
-            """,
-    ), color="dark")
-
-    card =  dbc.Card([
-        dbc.CardHeader(html.H2("Bonus Gap"), className="text-center"),
-        dbc.CardBody([
-            dbc.Row([dbc.Col(mean), dbc.Col(median)], className="text-center"),
-            bonusgap
-        ])
-    ])
-    return card
-
+# Callback to create Fraud Score chart
+#@app.callback(
+#    Output("fraud-score-chart", "children"),
+#    Input("store-selected", "data")
+#)
+#def make_fraud_score_chart(data):
+#    stream_data = data.get("stream_data", [])
+#    if not stream_data:  # Check if data is available
+#        return dbc.Card([dcc.Markdown("No fraud scores available.")])
+#    
+#    # Create a DataFrame from the stream_data for plotting
+#    df = pd.DataFrame(stream_data)
+#
+#    fig = go.Figure(data=[go.Scatter(x=df.index, y=df["fraud_score"], mode='lines')])
+#    
+#    return dbc.Card([
+#        dbc.CardHeader(html.H2("Fraud Score Over Time")),
+#        dcc.Graph(figure=fig)
+#    ])
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run_server(debug=True)
