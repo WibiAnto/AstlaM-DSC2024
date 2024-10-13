@@ -100,7 +100,7 @@ def make_grid(user,interval):
             ] + [{"field": "payment_method"},{"field": "device_type"},
                  {"field": "location"},{"field": "transaction_status"},
                  {"field": "fraud_score"},{"field": "label"}],
-            defaultColDef={"filter": True, "floatingFilter": True,  "wrapHeaderText": True, "autoHeaderHeight": True, "initialWidth": 200 },
+            defaultColDef={"filter": True, "floatingFilter": True, "wrapHeaderText": True, "autoHeaderHeight": True, "initialWidth": 200},
             dashGridOptions={},
             style={"height": 600, "width": "100%"}
         )
@@ -149,7 +149,7 @@ def update_store(user):
             stream_data_not_normalize["label"] = stream_data["label"]
             shap_value = explaiable.get_shap_value(data=stream_data[stream_data.columns[:-2]])
             df = pd.concat([df,stream_data_not_normalize], ignore_index=True) # Update stream_data from your main function
-            print(df.to_dict())
+            #print(df.to_dict())
             if True:
                 break
 
