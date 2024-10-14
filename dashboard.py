@@ -5,6 +5,7 @@ import dash_bootstrap_components as dbc
 import dash_ag_grid as dag
 import shap
 import datetime
+import plotly.graph_objects as go
 import matplotlib.pyplot as plt
 import plotly.graph_objs as go  # Importing Plotly for charts
 from main import *  # Assuming your main file contains the required functions
@@ -12,6 +13,7 @@ from main import *  # Assuming your main file contains the required functions
 # Setup the Dash app
 app = Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
 df = pd.DataFrame()  # Initialize an empty DataFrame
+df_preprocessing = pd.DataFrame()
 
 # Replace with your actual CSV path
 categorical_cols = ['product_category', 'payment_method', 'transaction_status', 'device_type', 'location']
@@ -87,7 +89,7 @@ info = dbc.Accordion([
 @callback(
     Output("grid-container", "children"),
     [Input("user-dropdown", "value"),
-     Input("interval-component", "n_intervals")],
+     Input("interval-component", "n_intervals")]
 )
 def make_grid(user,interval):
     if not df.empty:
@@ -114,8 +116,13 @@ app.layout = dbc.Container(
         heading,
         dbc.Row([
             dbc.Col([control_panel, info], md=3),
-            dbc.Col([html.Div(id="shap-bar-chart"), html.Div(id="fraud-score-chart")], md=9)
+            dbc.Col([dcc.Graph(id='shap-graph', figure=go.Figure()), html.Div(id="fraud-score-chart")], md=9)
         ]),
+        dbc.Row([dbc.Col([dcc.Graph(id='survival-analysis-graph', figure=go.Figure())], md=9),
+                 dbc.Col(dcc.Markdown(
+                     """The dataset contains synthetic transactions data to simulate real-world scenarios."""
+                     ))
+                 ]),
         dbc.Row(dbc.Col(html.Div(id="grid-container")), className="my-4"),
         dcc.Interval(
         id='interval-component',
@@ -130,8 +137,9 @@ app.layout = dbc.Container(
     Output("store-selected", "data"),
     Input("interval-component", "n_intervals")
 )
-def update_store(user):
+def update_df(user):
     global df  # Use the global variable
+    global df_preprocessing
     try:
         for row in get_stream_data(data=data):
             stream_data = preprocessing.extract_date_time(data=row)
@@ -145,9 +153,12 @@ def update_store(user):
             stream_data = preprocessing.transform_normalize(data=stream_data)
             stream_data["fraud_score"] = model_development.inference_model(data=stream_data)
             stream_data["label"] = stream_data["fraud_score"].apply(lambda x: 1 if x >= threshold else 0)
+            stream_data["user_id"] = row['user_id']
+            df_preprocessing = pd.concat([df_preprocessing,stream_data], ignore_index=True)
+            # pd.concat([df_preprocessing,stream_data]), stream_data.copy()
             stream_data_not_normalize["fraud_score"] = stream_data["fraud_score"]
             stream_data_not_normalize["label"] = stream_data["label"]
-            shap_value = explaiable.get_shap_value(data=stream_data[stream_data.columns[:-2]])
+            #shap_value = explaiable.get_shap_value(data=stream_data[stream_data.columns[:-2]])
             df = pd.concat([df,stream_data_not_normalize], ignore_index=True) # Update stream_data from your main function
             #print(df.to_dict())
             if True:
@@ -155,6 +166,39 @@ def update_store(user):
 
     except StopIteration:
         return {"stream_data": [], "shap_value": []}  # Handle end of generator
+
+# Initialize streaming data status
+stream_data_status = None
+
+@app.callback(
+    Output('shap-graph', 'figure'),
+    [Input("user-dropdown", "value"),
+     Input("interval-component", "n_intervals")]
+)
+def update_shap_graph(user,interval):
+    if (not df_preprocessing.empty):
+        filtered_df = df_preprocessing[df_preprocessing['user_id'] == user].tail(1)
+        try:
+            shap_value = explaiable.get_shap_value(data=filtered_df[filtered_df.columns[:-3]])
+            shap_value["features"] = filtered_df.columns[:-3].tolist()
+            shap_value["abs_value"] = abs(shap_value.shap_value)
+            shap_value.sort_values(by="abs_value",ascending = False, inplace = True)
+            #print(shap_value)
+            fig = go.Figure(data=[
+                go.Bar(
+                    x=shap_value["abs_value"].head(5),
+                    y=shap_value["features"].head(5),
+                    orientation='h'
+                )
+            ])
+            fig.update_layout(title=f'SHAP Values for Streaming Data {user}',
+                              xaxis_title='SHAP Value',
+                              yaxis_title='Features')
+
+            return fig
+        except StopIteration:
+            return go.Figure()  # Handle end of streaming data
+    
 
 # Function to plot SHAP bar plot and save it as an image
 #def plot_shap_bar(shap_value):
