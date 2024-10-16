@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 import matplotlib.pyplot as plt
 import plotly.graph_objs as go  # Importing Plotly for charts
 from main import *  # Assuming your main file contains the required functions
+from lifelines import KaplanMeierFitter
 
 # Setup the Dash app
 app = Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
@@ -118,7 +119,7 @@ app.layout = dbc.Container(
             dbc.Col([control_panel, info], md=3),
             dbc.Col([dcc.Graph(id='shap-graph', figure=go.Figure()), html.Div(id="fraud-score-chart")], md=9)
         ]),
-        dbc.Row([dbc.Col([dcc.Graph(id='survival-analysis-graph', figure=go.Figure())], md=9),
+        dbc.Row([dbc.Col([dcc.Graph(id='survival-analysis-graph', figure=go.Figure()), html.Div(id="survival-analysis-chart")], md=9),
                  dbc.Col(dcc.Markdown(
                      """The dataset contains synthetic transactions data to simulate real-world scenarios."""
                      ))
@@ -194,6 +195,33 @@ def update_shap_graph(user,interval):
             fig.update_layout(title=f'SHAP Values for Streaming Data {user}',
                               xaxis_title='SHAP Value',
                               yaxis_title='Features')
+
+            return fig
+        except StopIteration:
+            return go.Figure()  # Handle end of streaming data
+    
+
+
+@app.callback(
+    Output('survival-analysis-graph', 'figure'),
+    [Input("user-dropdown", "value"),
+     Input("interval-component", "n_intervals")]
+)
+def update_survival_analysis_graph(user,interval):
+    if (not df_preprocessing.empty):
+        filtered_df = df_preprocessing[df_preprocessing['user_id'] == user].reset_index()
+        try:
+            kmf = KaplanMeierFitter(label=user)
+            kmf.fit(filtered_df.index,filtered_df['label'])
+            index = kmf.cumulative_density_.index.to_list()
+            print(index)
+            probability = list((1 - kmf.cumulative_density_)[user])
+            print(probability)
+            fig = go.Figure(data=go.Scatter(x=index,y=probability),layout_yaxis_range=[0,1]
+            )
+            fig.update_layout(title=f'Survival Analysis for Streaming Data {user}',
+                              xaxis_title='Times',
+                              yaxis_title='Probability',yaxis_range=[0,1])
 
             return fig
         except StopIteration:
