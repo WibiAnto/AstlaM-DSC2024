@@ -211,12 +211,14 @@ def update_survival_analysis_graph(user,interval):
     if (not df_preprocessing.empty):
         filtered_df = df_preprocessing[df_preprocessing['user_id'] == user].reset_index()
         try:
+            rows_to_add = 1000-filtered_df.shape[0]
+            label_dummy = filtered_df['label']
+            new_rows = pd.DataFrame(np.zeros((rows_to_add, 1)), columns=[0])
+            Label_dummy = pd.concat([label_dummy, new_rows], ignore_index=True)
             kmf = KaplanMeierFitter(label=user)
-            kmf.fit(filtered_df.index,filtered_df['label'])
-            index = kmf.cumulative_density_.index.to_list()
-            print(index)
-            probability = list((1 - kmf.cumulative_density_)[user])
-            print(probability)
+            kmf.fit(Label_dummy.index,Label_dummy)
+            index = kmf.cumulative_density_.index.to_list()[:filtered_df.shape[0]]
+            probability = list((1 - kmf.cumulative_density_)[user])[:filtered_df.shape[0]]
             fig = go.Figure(data=go.Scatter(x=index,y=probability),layout_yaxis_range=[0,1]
             )
             fig.update_layout(title=f'Survival Analysis for Streaming Data {user}',
