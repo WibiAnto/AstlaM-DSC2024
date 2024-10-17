@@ -3,10 +3,13 @@ import os
 import pandas as pd
 import shap
 import warnings
-
+import datetime
+import random
 from joblib import dump, load
 from pyod.models.ocsvm import OCSVM
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
+from sklearn.linear_model import LinearRegression
+
 
 pd.set_option('display.max_columns', None)
 warnings.filterwarnings("ignore")
@@ -82,11 +85,57 @@ class SHAPValue:
         shap_value = self.explainer(data)
         return pd.DataFrame(shap_value[0].values, columns=["shap_value"])
 
+class KaplanMeier:
+    def __init__(self,N:int):
+        self.N = N
+
+    def get_survival_prob(self,status:pd.DataFrame):
+        prob = []
+        current_live = self.N
+        for i in range(status.shape[0]):  
+            lifetime = (current_live-status.iloc[i])/self.N
+            current_live = current_live-status.iloc[i]
+            prob.append(lifetime)
+        return prob
+    
+    def predict_future(self, timeline,duration)->str:
+        lr = LinearRegression()
+        duration = np.array(duration)
+        lr.fit(X=timeline.reshape(-1,1),y=duration.reshape(-1,1))
+
+        x_test = np.arange(len(duration),len(duration)+90)
+        predicted_lifetime = pd.DataFrame(lr.predict(X=x_test.reshape(-1,1)),columns=['predicted_lifetime'])
+        if len(predicted_lifetime[predicted_lifetime['predicted_lifetime']<0.6]) > 0:
+            duration_index =  predicted_lifetime[predicted_lifetime['predicted_lifetime']<0.6].index[0]
+            return f"Fraud will be on {duration_index}"
+        return "Transaction is Safety"
+
 def get_stream_data(data:pd.DataFrame):
     while True:
         idx = np.random.choice(data.index)
         yield data.loc[idx].to_frame().T.reset_index(drop=True)
         data = data.drop(index=idx)
+
+class random_date_transaction:
+    def __init__(self,n_transaction_per_day):
+        self.i_transaction = 1
+        self.N = n_transaction_per_day
+        self.delta = datetime.timedelta(days=0)
+        self.day = 0
+    
+    def random_date(self):
+        if (self.i_transaction%self.N)==0:
+            self.day = self.day+1
+            now = datetime.datetime.now()
+            self.delta = datetime.timedelta(days=self.day)
+            time = now + self.delta
+            self.N = random.randint(70,100)
+        else:
+            now = datetime.datetime.now()
+            time = now + self.delta
+            self.i_transaction = self.i_transaction + 1
+        
+        return time
 
 def main():
     categorical_cols = ['product_category', 'payment_method', 'transaction_status', 'device_type', 'location']

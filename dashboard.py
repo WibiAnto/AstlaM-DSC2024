@@ -4,12 +4,13 @@ from dash import Dash, html, dcc, Input, Output, callback
 import dash_bootstrap_components as dbc
 import dash_ag_grid as dag
 import shap
-import datetime
+
 import plotly.graph_objects as go
 import matplotlib.pyplot as plt
 import plotly.graph_objs as go  # Importing Plotly for charts
 from main import *  # Assuming your main file contains the required functions
 from lifelines import KaplanMeierFitter
+
 
 # Setup the Dash app
 app = Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
@@ -21,6 +22,7 @@ categorical_cols = ['product_category', 'payment_method', 'transaction_status', 
 numerical_cols = ['product_amount','transaction_fee','cashback','loyalty_points']
 preprocessing = PreProcessing()
 model_development = ModelDevelopment()
+date = random_date_transaction(30)
 
 # Read data
 data_path = "./data/data.csv"
@@ -38,6 +40,11 @@ preprocessing_data["fraud_score"] = model_development.inference_model(data=prepr
 threshold = model_development.contamination*max(preprocessing_data["fraud_score"])
 explaiable = SHAPValue(data=preprocessing_data[preprocessing_data.columns[:-1]])  
 explaiable.set_explainer(model=model_development.model.predict)
+
+kmf = KaplanMeier(1000)
+
+predict = ""
+
 
 # Dropdown for selecting user
 user_dropdown = html.Div(
@@ -120,14 +127,16 @@ app.layout = dbc.Container(
             dbc.Col([dcc.Graph(id='shap-graph', figure=go.Figure()), html.Div(id="fraud-score-chart")], md=9)
         ]),
         dbc.Row([dbc.Col([dcc.Graph(id='survival-analysis-graph', figure=go.Figure()), html.Div(id="survival-analysis-chart")], md=9),
-                 dbc.Col(dcc.Markdown(
-                     """The dataset contains synthetic transactions data to simulate real-world scenarios."""
-                     ))
-                 ]),
+                 dbc.Col(id='predict-fraud')]),
         dbc.Row(dbc.Col(html.Div(id="grid-container")), className="my-4"),
         dcc.Interval(
         id='interval-component',
         interval=10000,  # Update every 1000 milliseconds (1 second)
+        n_intervals=0  # Initial number of intervals
+        ),
+        dcc.Interval(
+        id='interval-component-streaming',
+        interval=1000,  # Update every 1000 milliseconds (1 second)
         n_intervals=0  # Initial number of intervals
         )
     ], fluid=True
@@ -136,7 +145,7 @@ app.layout = dbc.Container(
 # Callback to update the data and SHAP values for the selected user
 @app.callback(
     Output("store-selected", "data"),
-    Input("interval-component", "n_intervals")
+    Input("interval-component-streaming", "n_intervals")
 )
 def update_df(user):
     global df  # Use the global variable
@@ -147,14 +156,16 @@ def update_df(user):
             encoded_stream_data = preprocessing.transform_encoder(data=row[categorical_cols])
             stream_data = pd.concat([stream_data, encoded_stream_data, row[numerical_cols]], axis=1)
             stream_data_not_normalize = stream_data.copy()
-
-            now = datetime.datetime.now()
-            stream_data_not_normalize['transaction_date'] = now.strftime("%Y-%m-%d %H:%M:%S")
+            time = date.random_date()
+            
+            stream_data_not_normalize['transaction_date'] = time.strftime("%Y-%m-%d %H:%M:%S")
+            
             stream_data_not_normalize = pd.concat([row[['user_id','product_amount','payment_method','device_type','location','transaction_status']],stream_data_not_normalize], axis=1)
             stream_data = preprocessing.transform_normalize(data=stream_data)
             stream_data["fraud_score"] = model_development.inference_model(data=stream_data)
             stream_data["label"] = stream_data["fraud_score"].apply(lambda x: 1 if x >= threshold else 0)
             stream_data["user_id"] = row['user_id']
+            stream_data["date"] = time.strftime("%Y-%m-%d")
             df_preprocessing = pd.concat([df_preprocessing,stream_data], ignore_index=True)
             # pd.concat([df_preprocessing,stream_data]), stream_data.copy()
             stream_data_not_normalize["fraud_score"] = stream_data["fraud_score"]
@@ -177,11 +188,11 @@ stream_data_status = None
      Input("interval-component", "n_intervals")]
 )
 def update_shap_graph(user,interval):
-    if (not df_preprocessing.empty):
-        filtered_df = df_preprocessing[df_preprocessing['user_id'] == user].tail(1)
+    filtered_df = df_preprocessing[df_preprocessing['user_id'] == user].tail(1)
+    if (not filtered_df.empty):
         try:
-            shap_value = explaiable.get_shap_value(data=filtered_df[filtered_df.columns[:-3]])
-            shap_value["features"] = filtered_df.columns[:-3].tolist()
+            shap_value = explaiable.get_shap_value(data=filtered_df[filtered_df.columns[:-4]])
+            shap_value["features"] = filtered_df.columns[:-4].tolist()
             shap_value["abs_value"] = abs(shap_value.shap_value)
             shap_value.sort_values(by="abs_value",ascending = False, inplace = True)
             #print(shap_value)
@@ -203,77 +214,45 @@ def update_shap_graph(user,interval):
 
 
 @app.callback(
-    Output('survival-analysis-graph', 'figure'),
+    [Output('survival-analysis-graph', 'figure'),
+     Output('predict-fraud','children')],
     [Input("user-dropdown", "value"),
      Input("interval-component", "n_intervals")]
 )
 def update_survival_analysis_graph(user,interval):
-    if (not df_preprocessing.empty):
-        filtered_df = df_preprocessing[df_preprocessing['user_id'] == user].reset_index()
+    global predict
+    filtered_df = df_preprocessing[df_preprocessing['user_id'] == user].reset_index()
+    if (not filtered_df.empty):
         try:
-            rows_to_add = 1000-filtered_df.shape[0]
-            label_dummy = filtered_df['label']
-            new_rows = pd.DataFrame(np.zeros((rows_to_add, 1)), columns=[0])
-            Label_dummy = pd.concat([label_dummy, new_rows], ignore_index=True)
-            kmf = KaplanMeierFitter(label=user)
-            kmf.fit(Label_dummy.index,Label_dummy)
-            index = kmf.cumulative_density_.index.to_list()[:filtered_df.shape[0]]
-            probability = list((1 - kmf.cumulative_density_)[user])[:filtered_df.shape[0]]
-            fig = go.Figure(data=go.Scatter(x=index,y=probability),layout_yaxis_range=[0,1]
+            grouped_year_month_day = filtered_df.groupby('date').sum(numeric_only=True).reset_index()
+            status = grouped_year_month_day['label']
+            probability = kmf.get_survival_prob(status)
+
+            predict = kmf.predict_future(np.arange(0,len(probability)),probability)
+
+
+            #if(user=='USER_00001'):
+            #    probability = kmf_1.get_survival_prob(status)
+            #elif(user=='USER_00002'):
+            #    probability = kmf_2.get_survival_prob(status)
+            #elif(user=='USER_00003'):
+            #    probability = kmf_3.get_survival_prob(status)
+            #elif(user=='USER_00004'):
+            #    probability = kmf_4.get_survival_prob(status)
+            #elif(user=='USER_00005'):
+            #    kmf_5.get_survival_prob(status)
+            #    probability = kmf_5.prob
+            fig = go.Figure(data=go.Scatter(x=np.arange(0,len(probability)),
+                                            y=probability),layout_yaxis_range=[min([0.8,min(probability)]),1.05]
             )
             fig.update_layout(title=f'Survival Analysis for Streaming Data {user}',
                               xaxis_title='Times',
-                              yaxis_title='Probability',yaxis_range=[0,1])
+                              yaxis_title='Probability',yaxis_range=[min([0.8,min(probability)]),1.05])
 
-            return fig
+            return fig,predict
         except StopIteration:
             return go.Figure()  # Handle end of streaming data
     
-
-# Function to plot SHAP bar plot and save it as an image
-#def plot_shap_bar(shap_value):
-#    # Create SHAP bar plot and save to file
-#    shap.plots.bar(shap_value, show=False)
-#    plt.savefig('./assets/shap_bar_plot.png', bbox_inches='tight')  # Save the plot to a file
-#    plt.close()  # Close the plot to free up memory
-
-# Callback to create SHAP bar chart using shap.plots.bar
-#@app.callback(
-#    Output("shap-bar-chart", "children"),
-#    Input("store-selected", "data")
-#)
-#def make_shap_plot(data):
-#    shap_value = data.get("shap_value", [])
-#    if not shap_value:  # Check if shap_value is available
-#        return dbc.Card([dcc.Markdown("No SHAP values available.")])
-#    
-#    # Generate SHAP bar plot and save as an image
-#    plot_shap_bar(shap_value)
-#
-#    return dbc.Card([
-#        dbc.CardHeader(html.H2("SHAP Values for Fraud Analysis")),
-#        html.Img(src='/assets/shap_bar_plot.png', style={'width': '100%'})  # Load image in the dashboard
-#    ])
-
-# Callback to create Fraud Score chart
-#@app.callback(
-#    Output("fraud-score-chart", "children"),
-#    Input("store-selected", "data")
-#)
-#def make_fraud_score_chart(data):
-#    stream_data = data.get("stream_data", [])
-#    if not stream_data:  # Check if data is available
-#        return dbc.Card([dcc.Markdown("No fraud scores available.")])
-#    
-#    # Create a DataFrame from the stream_data for plotting
-#    df = pd.DataFrame(stream_data)
-#
-#    fig = go.Figure(data=[go.Scatter(x=df.index, y=df["fraud_score"], mode='lines')])
-#    
-#    return dbc.Card([
-#        dbc.CardHeader(html.H2("Fraud Score Over Time")),
-#        dcc.Graph(figure=fig)
-#    ])
 
 if __name__ == "__main__":
     app.run_server(debug=True)
