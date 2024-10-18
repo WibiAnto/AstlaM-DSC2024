@@ -22,7 +22,7 @@ categorical_cols = ['product_category', 'payment_method', 'transaction_status', 
 numerical_cols = ['product_amount','transaction_fee','cashback','loyalty_points']
 preprocessing = PreProcessing()
 model_development = ModelDevelopment()
-date = random_date_transaction(30)
+date = random_date_transaction(70)
 
 # Read data
 data_path = "./data/data.csv"
@@ -82,13 +82,22 @@ about_card = dcc.Markdown(
 
 data_card = dcc.Markdown(
     """
-    The dataset contains synthetic transactions data to simulate real-world scenarios.
+    This dataset simulates transactions from a digital wallet platform similar to popular services like PayTm in India or Khalti in Nepal. It contains 5000 synthetic records of various financial transactions across multiple categories, providing a rich source for analysis of digital payment behaviors and trends.
+    """
+)
+
+astlam_card = dcc.Markdown(
+    """
+    Tegar Ridwansyah (Team Leader) @tegarridwansyah \
+    M. Ribhan Hadiyan @Ribhanhadyan \
+    Wibi Anto @WibiAnto
     """
 )
 
 info = dbc.Accordion([
     dbc.AccordionItem(about_card, title="About Project"),
-    dbc.AccordionItem(data_card, title="Data Source")
+    dbc.AccordionItem(data_card, title="Data Source"),
+    dbc.AccordionItem(astlam_card, title="AstlaM")
 ], start_collapsed=True)
 
 
@@ -120,27 +129,114 @@ def make_grid(user,interval):
 # Layout for the dashboard
 app.layout = dbc.Container(
     [
+        # Store for selected data
         dcc.Store(id="store-selected", data={}),
+
+        # Header
         heading,
+
+        # Control panel and information on the left, main graphs on the right
         dbc.Row([
-            dbc.Col([control_panel, info], md=3),
-            dbc.Col([dcc.Graph(id='shap-graph', figure=go.Figure()), html.Div(id="fraud-score-chart")], md=9)
-        ]),
-        dbc.Row([dbc.Col([dcc.Graph(id='survival-analysis-graph', figure=go.Figure()), html.Div(id="survival-analysis-chart")], md=9),
-                 dbc.Col(id='predict-fraud')]),
-        dbc.Row(dbc.Col(html.Div(id="grid-container")), className="my-4"),
+            dbc.Col([control_panel, info], md=3, style={'background-color': '#f8f9fa', 'padding': '20px', 'border-right': '1px solid #ddd'}),
+            dbc.Col([
+                # Row for the 4 small graphs
+                dbc.Row([
+                    dbc.Col(dcc.Graph(id='payment-method-chart', figure=go.Figure(), style={'height': '300px', 'width': '100%'}), md=3),
+                    dbc.Col(dcc.Graph(id='product-category-chart', figure=go.Figure(), style={'height': '300px', 'width': '100%'}), md=3),
+                    dbc.Col(dcc.Graph(id='graph-3', figure=go.Figure(), style={'height': '300px', 'width': '100%'}), md=3),
+                    dbc.Col(dcc.Graph(id='graph-4', figure=go.Figure(), style={'height': '300px', 'width': '100%'}), md=3),
+                ], className="mb-4"),
+
+                # Main SHAP graph
+                dcc.Graph(id='shap-graph', figure=go.Figure(), style={'height': '500px'}),
+
+                # Fraud score chart
+                html.Div(id="fraud-score-chart", style={'margin-top': '20px'})
+            ], md=9)
+        ], className="mb-5"),
+
+        # Survival analysis row
+        dbc.Row([
+            dbc.Col([
+                dcc.Graph(id='survival-analysis-graph', figure=go.Figure(), style={'height': '500px'}),
+                html.Div(id="survival-analysis-chart", style={'margin-top': '20px'})
+            ], md=9),
+            dbc.Col(id='predict-fraud', md=3, style={'background-color': '#f8f9fa', 'padding': '20px'})
+        ], className="mb-5"),
+
+        # Grid container
+        dbc.Row(dbc.Col(html.Div(id="grid-container", style={'padding': '20px', 'background-color': '#ffffff', 'border': '1px solid #ddd'})), className="mb-4"),
+
+        # Interval components for live updates
         dcc.Interval(
-        id='interval-component',
-        interval=10000,  # Update every 1000 milliseconds (1 second)
-        n_intervals=0  # Initial number of intervals
+            id='interval-component',
+            interval=10000,  # Update every 10 seconds
+            n_intervals=0
         ),
         dcc.Interval(
-        id='interval-component-streaming',
-        interval=1000,  # Update every 1000 milliseconds (1 second)
-        n_intervals=0  # Initial number of intervals
+            id='interval-component-streaming',
+            interval=1000,  # Update every second
+            n_intervals=0
         )
-    ], fluid=True
+    ], fluid=True, style={'padding': '40px', 'background-color': '#f0f2f5'}
 )
+
+
+# Callback untuk memperbarui grafik kategori produk
+@callback(
+    Output('product-category-chart', 'figure'),
+    Input('user-dropdown', 'value')
+)
+def update_product_category_chart(selected_user):
+    # Filter data berdasarkan user_id yang dipilih
+    user_data = data[data['user_id'] == selected_user]
+
+    # Hitung frekuensi kategori produk
+    category_freq = user_data['product_category'].value_counts().head(5).reset_index()
+    category_freq.columns = ['product_category', 'frequency']
+
+    # Buat grafik bar untuk frekuensi kategori produk
+    category_chart = go.Figure()
+    category_chart.add_trace(go.Bar(
+        x=category_freq['product_category'],
+        y=category_freq['frequency']
+    ))
+
+    category_chart.update_layout(
+        #title=f'Frekuensi Kategori Produk untuk User: {selected_user}',
+        xaxis_title='Kategori Produk',
+        yaxis_title='Frekuensi'
+    )
+
+    return category_chart
+
+# Callback untuk memperbarui grafik metode pembayaran
+@callback(
+    Output('payment-method-chart', 'figure'),
+    Input('user-dropdown', 'value')
+)
+def update_payment_chart(selected_user):
+    # Filter data berdasarkan user_id yang dipilih
+    user_data = data[data['user_id'] == selected_user]
+
+    # Hitung frekuensi metode pembayaran
+    payment_freq = user_data['payment_method'].value_counts().head(5).reset_index()
+    payment_freq.columns = ['payment_method', 'frequency']
+
+    # Buat grafik bar untuk frekuensi metode pembayaran
+    payment_chart = go.Figure()
+    payment_chart.add_trace(go.Bar(
+        x=payment_freq['payment_method'],
+        y=payment_freq['frequency']
+    ))
+
+    payment_chart.update_layout(
+        #title=f'Frekuensi Metode Pembayaran untuk User: {selected_user}',
+        xaxis_title='Metode Pembayaran',
+        yaxis_title='Frekuensi'
+    )
+
+    return payment_chart
 
 # Callback to update the data and SHAP values for the selected user
 @app.callback(

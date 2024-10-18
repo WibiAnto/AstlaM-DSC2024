@@ -107,8 +107,8 @@ class KaplanMeier:
         predicted_lifetime = pd.DataFrame(lr.predict(X=x_test.reshape(-1,1)),columns=['predicted_lifetime'])
         if len(predicted_lifetime[predicted_lifetime['predicted_lifetime']<0.6]) > 0:
             duration_index =  predicted_lifetime[predicted_lifetime['predicted_lifetime']<0.6].index[0]
-            return f"Fraud will be on {duration_index}"
-        return "Transaction is Safety"
+            return f"Fraud is predicted to occur in {duration_index}"
+        return "Safe Transactions for the next three months"
 
 def get_stream_data(data:pd.DataFrame):
     while True:
