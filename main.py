@@ -57,6 +57,8 @@ class ModelDevelopment:
         self.contamination = 0.05
         self.model_path = "./model"
         self.model_name = "ocsvm.joblib"
+        if os.path.exists(os.path.join(self.model_path, self.model_name)):
+            self.load_model()
 
     def set_model(self, data: pd.DataFrame):
         self.model = OCSVM(contamination=self.contamination)
@@ -76,7 +78,7 @@ class ModelDevelopment:
 
 class SHAPValue:
     def __init__(self, data: pd.DataFrame):
-        self.data = data
+        self.data = data.head(1)
     
     def set_explainer(self, model):
         self.explainer = shap.Explainer(model, self.data)
@@ -89,26 +91,25 @@ class KaplanMeier:
     def __init__(self,N:int):
         self.N = N
 
-    def get_survival_prob(self,status:pd.DataFrame):
-        prob = []
-        current_live = self.N
-        for i in range(status.shape[0]):  
-            lifetime = (current_live-status.iloc[i])/self.N
-            current_live = current_live-status.iloc[i]
-            prob.append(lifetime)
-        return prob
+    def get_survival_prob(self, current_n:int, status:int):
+        return (current_n - status) / self.N
     
-    def predict_future(self, timeline,duration)->str:
+    def predict_future(self, durations, survival_probability)->str:
         lr = LinearRegression()
-        duration = np.array(duration)
-        lr.fit(X=timeline.reshape(-1,1),y=duration.reshape(-1,1))
+        lr.fit(X=durations.index.to_frame(),y=survival_probability)
 
-        x_test = np.arange(len(duration),len(duration)+90)
+        x_test = np.arange(durations.tail(1).index[0], durations.tail(1).index[0]+30).reshape(-1, 1)
         predicted_lifetime = pd.DataFrame(lr.predict(X=x_test.reshape(-1,1)),columns=['predicted_lifetime'])
-        if len(predicted_lifetime[predicted_lifetime['predicted_lifetime']<0.6]) > 0:
+        if len(predicted_lifetime[predicted_lifetime['predicted_lifetime']<=0.6]) > 0:
             duration_index =  predicted_lifetime[predicted_lifetime['predicted_lifetime']<0.6].index[0]
-            return f"Fraud is predicted to occur in {duration_index}"
-        return "Safe Transactions for the next three months"
+            if len(predicted_lifetime[predicted_lifetime['predicted_lifetime']<=0.4]) > 0:
+                duration_index =  predicted_lifetime[predicted_lifetime['predicted_lifetime']<0.4].index[0]
+                if len(predicted_lifetime[predicted_lifetime['predicted_lifetime']<=0.2]) > 0:
+                    duration_index =  predicted_lifetime[predicted_lifetime['predicted_lifetime']<0.2].index[0]
+                    return f"Fraud is predicted to occur in the next {duration_index} days \nRekomendasi: Berikan aksi bekukan akun sementara demi keamanan"
+                return f"Fraud is predicted to occur in the next {duration_index} days \nRekomendasi: Berikan notifikasi 'terdeteksi aktivitas mencurigakan, ganti username password, cadangkan email'"
+            return f"Fraud is predicted to occur in the next {duration_index} days \nNo recommendation action to customer"
+        return "Customer is safe"
 
 def get_stream_data(data:pd.DataFrame):
     while True:
