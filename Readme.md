@@ -22,6 +22,8 @@ Real time Interactive Dashboard:
 - Download or Clone this repository
 - Run file "app.py"
 - Click or copy LocalHost link
+  ![image](https://github.com/user-attachments/assets/18a63007-80a7-4e7d-af54-ffc85110eee2)
+
 
 
 ## Dataset
@@ -36,6 +38,13 @@ Description: This dataset simulates transactions from a digital wallet platform 
 - Data Visualization: Dashboard with Plotly Dash
 
 ## Dashboard Preview
+![image](https://github.com/user-attachments/assets/75625dbe-6a66-45b1-83f2-e300bd59c210)
+![image](https://github.com/user-attachments/assets/277652a7-da22-4182-9908-3bb61068368f)
+![image](https://github.com/user-attachments/assets/acbd6d0c-7ff0-4bfe-90eb-ffb0ba341a06)
+![image](https://github.com/user-attachments/assets/4bff28ee-c592-4728-9a44-1879851f6dfc)
+
+
+
 
 ## AstlaM Team Member
 - Tegar Ridwansyah (Team Leader) [@tegarridwansyah](https://github.com/tegarridwansyah)
