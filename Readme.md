@@ -22,7 +22,8 @@ Real time Interactive Dashboard:
 - Download or Clone this repository
 - Run file "app.py"
 - Click or copy LocalHost link
-  ![image](https://github.com/user-attachments/assets/18a63007-80a7-4e7d-af54-ffc85110eee2)
+
+![image](https://github.com/user-attachments/assets/18a63007-80a7-4e7d-af54-ffc85110eee2)
 
 
 
