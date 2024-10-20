@@ -11,7 +11,10 @@ Real time Interactive Dashboard:
 - Python (3.10.XX or above)
 - Numpy 1.26.4
 - Pandas 2.2.3
-- Dash 2.18.1 
+- Dash 2.18.1
+- Dash_ag_grid 31.2.0
+- Dash_bootstrap_components 1.6.0
+- Shap 0.46.0
 - Joblib 1.4.2
 - PyOD 2.0.2
 - Plotly 5.24.1
